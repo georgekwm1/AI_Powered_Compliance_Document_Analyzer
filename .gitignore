@@ -1,0 +1,7 @@
+.env
+.env.*
+**/.env
+**/.env.*
+.venv/
+__pycache__/
+Procedures_and_Standards_vehicles_explosives/
