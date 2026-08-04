@@ -1,0 +1,8 @@
+# .fastapicloudignore
+
+# Ignore additional folders not in .gitignore
+frontend/
+RAG_Build.ipynb
+
+# Un-ignore something that IS in .gitignore but you actually want uploaded
+# !Procedures_and_Standards_vehicles_explosives/

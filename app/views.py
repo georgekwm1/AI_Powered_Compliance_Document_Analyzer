@@ -1,6 +1,11 @@
+from fastapi import Request
 from app.main import app
 from app.settings import settings
-from app.models import *
+from app.models import (TextProcessor, aggregate_chunked_texts, initialize_embedding_model_and_tokenizer, 
+                        get_embeddings_in_batch, vector_database_setup, retrieve_relevant_chunks, 
+                        generate_response)
+from app.rag_cache import get_or_build_index, invalidate_index
+import pdfplumber
 from fastapi import FastAPI, Depends, HTTPException, status
 from pathlib import Path
 from fastapi import Depends, HTTPException, status
@@ -17,16 +22,13 @@ logging.basicConfig(level=logging.INFO)
 class QueryRequest(BaseModel):
     query: str
 
-class FileNameRequest(BaseModel):
-    filename: str
-
 
 @app.post("/upload_documents")
-async def upload_documents(files: List[UploadFile] = File(...)):
+async def upload_documents(files: List[UploadFile] = File(...), req: Request = None):
     for f in files:
         content = await f.read()
         (Path(settings.data_dir) / f.filename).write_bytes(content)
-    
+    invalidate_index(req.app)
     return {"message": "Documents uploaded and processed successfully."}
 
 @app.get("/list_documents")
@@ -45,9 +47,8 @@ async def list_documents():
     return {"documents": documents}
 
 @app.get("/get_document/")
-async def get_document(request: FileNameRequest):
+async def get_document(filename: str):
     """Retrieve a specific document by filename."""
-    filename = request.filename
     file_path = Path(settings.data_dir) / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Document not found.")
@@ -63,39 +64,34 @@ async def get_document(request: FileNameRequest):
         raise HTTPException(status_code=400, detail="Unsupported file type. Only .txt and .pdf files are supported.")
 
 @app.delete("/delete_document/")
-async def delete_document(request: FileNameRequest):
-    filename = request.filename
+async def delete_document(filename: str, req: Request = None):
     """Delete a specific document by filename."""
     file_path = Path(settings.data_dir) / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Document not found.")
     file_path.unlink()
+    invalidate_index(req.app)
     return {"message": f"Document {filename} deleted successfully."}
 
 @app.post("/query_ai")
-async def query_ai(request: QueryRequest):
-    query = request.query
+async def query_ai(request: QueryRequest, req: Request):
     """Query the AI model with a specific question."""
-    # Instantiate the TextProcessor and load documents
-    text_processor_object, _ = TextProcessor.load_files(settings.data_dir)
-
-    # Process the texts and prepare them for AI querying
-    processed_data, cleaned_text = text_processor_object.process_texts()
-
-    # Get the aggregated chunked texts for AI model input
-    all_chunked_texts = aggregate_chunked_texts(processed_data)
-
-    # initialize the embedding model and tokenizer
-    model, tokenizer = initialize_embedding_model_and_tokenizer()
-
-    # Get embeddings for the aggregated chunked texts
-    embeddings = get_embeddings_in_batch(all_chunked_texts, model, tokenizer)
-
-    # Set up the vector database with the embeddings
-    index = vector_database_setup(embeddings)
+    query = request.query
+    embed_model, embed_tokenizer = await get_embed_model(req.app)
+    index, all_chunked_texts = await get_or_build_index(req.app)
 
     # Retrieve relevant chunks based on the query
-    context, distances = retrieve_relevant_chunks(query, model, tokenizer, index, all_chunked_texts)
+    context, distances = retrieve_relevant_chunks(
+        query, embed_model, embed_tokenizer,
+        index, all_chunked_texts,
+    )
     
     response = generate_response(query, context)
     return {"query": query, "response": response, "distances": distances.tolist()}
+
+async def get_embed_model(app):
+    if app.state.embed_model is None:
+        async with app.state.rag_lock:
+            if app.state.embed_model is None:
+                app.state.embed_model, app.state.embed_tokenizer = initialize_embedding_model_and_tokenizer()
+    return app.state.embed_model, app.state.embed_tokenizer
