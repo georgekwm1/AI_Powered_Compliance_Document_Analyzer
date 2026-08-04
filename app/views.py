@@ -51,7 +51,16 @@ async def get_document(request: FileNameRequest):
     file_path = Path(settings.data_dir) / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Document not found.")
-    return {"filename": filename, "content": file_path.read_text()}
+    if file_path.suffix.lower() == ".txt":
+        return {"filename": filename, "content": file_path.read_text(encoding="utf-8", errors="ignore")}
+    elif file_path.suffix.lower() == ".pdf":
+        with pdfplumber.open(file_path) as pdf:
+            text = ""
+            for page in pdf.pages:
+                text += page.extract_text()
+        return {"filename": filename, "content": text}
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported file type. Only .txt and .pdf files are supported.")
 
 @app.delete("/delete_document/")
 async def delete_document(request: FileNameRequest):
