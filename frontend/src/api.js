@@ -1,5 +1,5 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-const BASE = 'http://127.0.0.1:8002'
+// const BASE = 'http://127.0.0.1:8002'
 
 async function handle(res) {
   if (!res.ok) {
