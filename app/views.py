@@ -4,7 +4,7 @@ from app.settings import settings
 from app.models import (TextProcessor, aggregate_chunked_texts, initialize_embedding_model_and_tokenizer, 
                         get_embeddings_in_batch, vector_database_setup, retrieve_relevant_chunks, 
                         generate_response)
-from app.rag_cache import get_or_build_index, invalidate_index
+from app.rag_cache import add_document_to_index, ensure_index_initialized, remove_document_from_index
 import pdfplumber
 from fastapi import FastAPI, Depends, HTTPException, status
 from pathlib import Path
@@ -16,6 +16,7 @@ from fastapi import UploadFile, File, BackgroundTasks
 import secrets
 import json
 import logging
+from io import BytesIO
 
 logging.basicConfig(level=logging.INFO)
 
@@ -28,14 +29,20 @@ async def upload_documents(files: List[UploadFile] = File(...), req: Request = N
     data_dir = Path(settings.data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     for f in files:
+        if f.content_type not in ["text/plain", "application/pdf"]:
+            raise HTTPException(status_code=400, detail="Unsupported file type. Only .txt and .pdf files are supported.")
+        
         content = await f.read()
-        dest_path = Path(settings.data_dir) / f.filename
-        # Create parent directories if they don't exist
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
-        dest_path.write_bytes(content)
-        # (Path(settings.data_dir) / f.filename).write_bytes(content)  # This line is redundant
-    invalidate_index(req.app)
-    return {"message": "Documents uploaded and processed successfully."}
+        (data_dir / f.filename).write_bytes(content)
+        if f.content_type == "text/plain":
+            text = content.decode("utf-8", errors="ignore")
+        elif f.content_type == "application/pdf":
+            with pdfplumber.open(BytesIO(content)) as pdf:
+                text = ""
+                for page in pdf.pages:
+                    text += page.extract_text()
+        await add_document_to_index(req.app, f.filename, text)
+    return {"message": "Documents uploaded and indexed successfully."}
 
 @app.get("/list_documents")
 @app.get("/list_documents/")
@@ -71,12 +78,11 @@ async def get_document(filename: str):
 
 @app.delete("/delete_document/")
 async def delete_document(filename: str, req: Request = None):
-    """Delete a specific document by filename."""
     file_path = Path(settings.data_dir) / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Document not found.")
     file_path.unlink()
-    invalidate_index(req.app)
+    await remove_document_from_index(req.app, filename)
     return {"message": f"Document {filename} deleted successfully."}
 
 @app.post("/query_ai")
@@ -84,7 +90,8 @@ async def query_ai(request: QueryRequest, req: Request):
     """Query the AI model with a specific question."""
     query = request.query
     embed_model, embed_tokenizer = req.app.state.embed_model, req.app.state.embed_tokenizer
-    index, all_chunked_texts = await get_or_build_index(req.app)
+    await ensure_index_initialized(req.app)
+    index, all_chunked_texts = req.app.state.rag_index, req.app.state.rag_chunks
 
     # Retrieve relevant chunks based on the query
     context, distances = retrieve_relevant_chunks(

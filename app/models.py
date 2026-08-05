@@ -166,11 +166,10 @@ def vector_database_setup(embeddings):
     print("Vector database setup complete with {} embeddings.".format(index.ntotal))  # Print number of embeddings added to the index
     return index
 
-def retrieve_relevant_chunks(query, model, tokenizer, index, all_chunked_texts, k=5):
-    """Retrieve the most relevant chunks for a given query using the FAISS index."""
+def retrieve_relevant_chunks(query, model, tokenizer, index, chunk_map, k=5):
     embedding = get_query_embedding(query, model, tokenizer)
     distances, indices = index.search(embedding, k)
-    relevant_chunks = [all_chunked_texts[idx] for idx in indices[0]]
+    relevant_chunks = [chunk_map[idx] for idx in indices[0] if idx in chunk_map]
     return relevant_chunks, distances[0]
 
 def generate_response(query, context, max_new_tokens=100):

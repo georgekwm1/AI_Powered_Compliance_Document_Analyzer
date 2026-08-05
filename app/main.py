@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from tortoise.contrib.fastapi import register_tortoise
 from fastapi.middleware.cors import CORSMiddleware
 from app.models import initialize_embedding_model_and_tokenizer
-from app.rag_cache import get_or_build_index
+from app.rag_cache import build_initial_index
 import asyncio
 import nltk
 from pathlib import Path
@@ -26,8 +26,7 @@ def _ensure_nltk_data():
 async def lifespan(app: FastAPI):
     app.state.embed_model = None
     app.state.embed_tokenizer = None
-    app.state.rag_index = None          # faiss index, built lazily/invalidated
-    app.state.rag_chunks = None         # list[str] aligned with the index
+    # await ensure_index_initialized(app)  # Ensure the FAISS index is initialized at startup
     app.state.rag_signature = None      # fingerprint of data_dir contents
     app.state.rag_lock = asyncio.Lock() # guards rebuilds
 
@@ -38,7 +37,7 @@ async def lifespan(app: FastAPI):
         app.state.embed_model, app.state.embed_tokenizer = await asyncio.to_thread(
             initialize_embedding_model_and_tokenizer
         )
-        await get_or_build_index(app)
+        await build_initial_index(app)
         logger.info("RAG index preloaded successfully at startup.")
     except Exception:
         logger.exception("Failed to preload RAG index at startup; will build lazily on first query.")
