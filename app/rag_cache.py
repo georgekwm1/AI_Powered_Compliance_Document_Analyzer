@@ -1,5 +1,6 @@
 import hashlib
 from pathlib import Path
+from fastapi.concurrency import run_in_threadpool
 
 def compute_data_signature(data_dir: str) -> str:
     """Cheap fingerprint of directory contents (names + mtimes + sizes)."""
@@ -29,12 +30,9 @@ async def get_or_build_index(app, force_rebuild: bool = False):
         # Rebuild only when the directory actually changed (or first call)
         text_processor_object, _ = TextProcessor.load_files(settings.data_dir)
         processed_data, _ = text_processor_object.process_texts()
-        all_chunked_texts = aggregate_chunked_texts(processed_data)
-
-        embeddings = get_embeddings_in_batch(
-            all_chunked_texts, app.state.embed_model, app.state.embed_tokenizer
-        )
-        index = vector_database_setup(embeddings)
+        all_chunked_texts = await run_in_threadpool(aggregate_chunked_texts, processed_data)
+        embeddings = await run_in_threadpool(get_embeddings_in_batch, all_chunked_texts, app.state.embed_model, app.state.embed_tokenizer)
+        index = await run_in_threadpool(vector_database_setup, embeddings)
 
         app.state.rag_index = index
         app.state.rag_chunks = all_chunked_texts

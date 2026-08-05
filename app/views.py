@@ -25,9 +25,15 @@ class QueryRequest(BaseModel):
 
 @app.post("/upload_documents")
 async def upload_documents(files: List[UploadFile] = File(...), req: Request = None):
+    data_dir = Path(settings.data_dir)
+    data_dir.mkdir(parents=True, exist_ok=True)
     for f in files:
         content = await f.read()
-        (Path(settings.data_dir) / f.filename).write_bytes(content)
+        dest_path = Path(settings.data_dir) / f.filename
+        # Create parent directories if they don't exist
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        dest_path.write_bytes(content)
+        # (Path(settings.data_dir) / f.filename).write_bytes(content)  # This line is redundant
     invalidate_index(req.app)
     return {"message": "Documents uploaded and processed successfully."}
 
@@ -77,7 +83,7 @@ async def delete_document(filename: str, req: Request = None):
 async def query_ai(request: QueryRequest, req: Request):
     """Query the AI model with a specific question."""
     query = request.query
-    embed_model, embed_tokenizer = await get_embed_model(req.app)
+    embed_model, embed_tokenizer = req.app.state.embed_model, req.app.state.embed_tokenizer
     index, all_chunked_texts = await get_or_build_index(req.app)
 
     # Retrieve relevant chunks based on the query
