@@ -138,6 +138,9 @@ def initialize_embedding_model_and_tokenizer():
 def get_embeddings_in_batch(texts, model, tokenizer, batch_size=32):
     """Get embeddings for a list of texts in batches."""
     import numpy as np
+    if not texts:
+        # Gracefully handle empty chunks instead of passing empty list to np.vstack
+        raise ValueError("No text chunks available. Ensure documents are loaded in the data directory.")
     all_embeddings = []
     for i in range(0, len(texts), batch_size):
         batch_texts = texts[i:i+batch_size]
