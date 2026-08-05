@@ -172,7 +172,7 @@ def retrieve_relevant_chunks(query, model, tokenizer, index, chunk_map, k=5):
     relevant_chunks = [chunk_map[idx] for idx in indices[0] if idx in chunk_map]
     return relevant_chunks, distances[0]
 
-def generate_response(query, context, max_new_tokens=100):
+def generate_response(query, context, max_new_tokens=2000):
     import anthropic
     import os
     from app.settings import settings
