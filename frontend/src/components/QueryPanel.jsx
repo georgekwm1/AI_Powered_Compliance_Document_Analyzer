@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { queryAi } from '../api'
 
 export default function QueryPanel() {
@@ -69,10 +70,12 @@ export default function QueryPanel() {
             <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
               Response
             </h4>
-            <div className="rounded-md bg-slate-50 border border-slate-200 p-3 text-sm text-slate-800 whitespace-pre-wrap">
-              {typeof result.response === 'string'
-                ? result.response
-                : JSON.stringify(result.response, null, 2)}
+            <div className="rounded-md bg-slate-50 border border-slate-200 p-3 text-sm text-slate-800 prose prose-sm max-w-none">
+              {typeof result.response === 'string' ? (
+                <ReactMarkdown>{result.response}</ReactMarkdown>
+              ) : (
+                <pre>{JSON.stringify(result.response, null, 2)}</pre>
+              )}
             </div>
           </div>
           {Array.isArray(result.distances) && result.distances.length > 0 && (
